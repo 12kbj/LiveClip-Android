@@ -6,6 +6,8 @@ import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Intent;
 import android.graphics.Color;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Environment;
@@ -13,6 +15,7 @@ import android.view.Gravity;
 import android.view.View;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.webkit.CookieManager;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageView;
@@ -29,22 +32,32 @@ import java.io.ByteArrayOutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class MainActivity extends Activity {
+    private static final int INK=Color.rgb(28,45,49),MUTED=Color.rgb(104,120,121),TEAL=Color.rgb(17,129,120),SURFACE=Color.WHITE,BG=Color.rgb(247,249,247);
     private final ExecutorService work=Executors.newFixedThreadPool(2);
-    private EditText input; private TextView status; private LinearLayout results; private WebView webView;
+    private EditText input; private TextView status; private LinearLayout results; private WebView webView,loginView;
     private int generation=0;
     @Override public void onCreate(Bundle saved){super.onCreate(saved);render();String shared=getIntent().getStringExtra(Intent.EXTRA_TEXT);if(shared!=null)input.setText(shared);}
     private int dp(int n){return Math.round(n*getResources().getDisplayMetrics().density);}
-    private TextView text(String value,int size){TextView v=new TextView(this);v.setText(value);v.setTextSize(size);v.setTextColor(Color.rgb(42,43,48));v.setPadding(0,dp(8),0,dp(8));return v;}
-    private Button button(String label,Runnable action){Button b=new Button(this);b.setText(label);b.setAllCaps(false);b.setOnClickListener(v->action.run());return b;}
-    private void render(){ScrollView scroll=new ScrollView(this);LinearLayout page=new LinearLayout(this);page.setOrientation(LinearLayout.VERTICAL);page.setPadding(dp(20),dp(28),dp(20),dp(30));page.setBackgroundColor(Color.rgb(249,249,249));scroll.addView(page);setContentView(scroll);
-        TextView title=text("拾影 · 媒体保存",27);title.setTextColor(Color.rgb(160,64,78));page.addView(title);page.addView(text("视频 / 图文 / 实况原图与短片",14));
-        input=new EditText(this);input.setMinLines(3);input.setGravity(Gravity.TOP);input.setTextSize(16);input.setHint("粘贴抖音分享内容或从抖音分享到本应用");page.addView(input,new LinearLayout.LayoutParams(-1,dp(120)));
-        LinearLayout row=new LinearLayout(this);page.addView(row);Button paste=button("粘贴",()->{ClipboardManager cb=(ClipboardManager)getSystemService(CLIPBOARD_SERVICE);ClipData clip=cb.getPrimaryClip();if(clip!=null&&clip.getItemCount()>0)input.setText(clip.getItemAt(0).coerceToText(this));});row.addView(paste,new LinearLayout.LayoutParams(0,-2,1));Button parse=button("解析作品",this::parse);row.addView(parse,new LinearLayout.LayoutParams(0,-2,2));
-        status=text("仅保存你有权保存的内容。解析依赖分享页数据，页面更新后可能需要升级应用。",14);page.addView(status);results=new LinearLayout(this);results.setOrientation(LinearLayout.VERTICAL);page.addView(results);
+    private GradientDrawable shape(int color,int radius){GradientDrawable d=new GradientDrawable();d.setColor(color);d.setCornerRadius(dp(radius));return d;}
+    private TextView text(String value,int size){TextView v=new TextView(this);v.setText(value);v.setTextSize(size);v.setTextColor(INK);v.setPadding(0,dp(5),0,dp(5));return v;}
+    private Button button(String label,Runnable action){Button b=new Button(this);b.setText(label);b.setTextSize(15);b.setAllCaps(false);b.setTextColor(Color.WHITE);b.setBackground(shape(TEAL,14));b.setOnClickListener(v->action.run());return b;}
+    private LinearLayout card(LinearLayout parent){LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(dp(16),dp(15),dp(16),dp(16));box.setBackground(shape(SURFACE,20));box.setElevation(dp(2));LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.bottomMargin=dp(15);parent.addView(box,lp);return box;}
+    private void render(){getWindow().setStatusBarColor(BG);getWindow().setNavigationBarColor(BG);getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR|View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
+        ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);LinearLayout page=new LinearLayout(this);page.setOrientation(LinearLayout.VERTICAL);page.setPadding(dp(20),dp(28),dp(20),dp(38));page.setBackgroundColor(BG);scroll.addView(page);setContentView(scroll);
+        LinearLayout header=new LinearLayout(this);header.setGravity(Gravity.CENTER_VERTICAL);LinearLayout.LayoutParams headerLp=new LinearLayout.LayoutParams(-1,-2);headerLp.bottomMargin=dp(18);page.addView(header,headerLp);
+        ImageView mark=new ImageView(this);mark.setImageResource(com.example.liveclip.R.drawable.ic_launcher_foreground);mark.setBackground(shape(TEAL,16));mark.setPadding(dp(5),dp(5),dp(5),dp(5));header.addView(mark,new LinearLayout.LayoutParams(dp(54),dp(54)));
+        LinearLayout titles=new LinearLayout(this);titles.setOrientation(LinearLayout.VERTICAL);titles.setPadding(dp(14),0,0,0);header.addView(titles);TextView title=text("拾影",27);title.setTypeface(null,Typeface.BOLD);titles.addView(title);TextView subtitle=text("留住每一帧喜欢",13);subtitle.setTextColor(MUTED);titles.addView(subtitle);
+        LinearLayout inputCard=card(page);TextView heading=text("粘贴作品链接",19);heading.setTypeface(null,Typeface.BOLD);inputCard.addView(heading);TextView hint=text("支持视频、图文和可获取动态短片的实况作品",13);hint.setTextColor(MUTED);inputCard.addView(hint);
+        input=new EditText(this);input.setMinLines(3);input.setMaxLines(6);input.setGravity(Gravity.TOP);input.setTextSize(15);input.setTextColor(INK);input.setPadding(dp(12),dp(12),dp(12),dp(12));input.setHint("在这里粘贴抖音分享内容…");input.setBackground(shape(BG,12));LinearLayout.LayoutParams inputLp=new LinearLayout.LayoutParams(-1,dp(128));inputLp.topMargin=dp(10);inputLp.bottomMargin=dp(12);inputCard.addView(input,inputLp);
+        LinearLayout row=new LinearLayout(this);inputCard.addView(row);Button paste=button("粘贴",()->{ClipboardManager cb=(ClipboardManager)getSystemService(CLIPBOARD_SERVICE);ClipData clip=cb.getPrimaryClip();if(clip!=null&&clip.getItemCount()>0)input.setText(clip.getItemAt(0).coerceToText(this));});paste.setBackground(shape(Color.rgb(228,241,237),13));paste.setTextColor(TEAL);LinearLayout.LayoutParams pasteLp=new LinearLayout.LayoutParams(0,dp(48),1);pasteLp.rightMargin=dp(10);row.addView(paste,pasteLp);row.addView(button("开始解析",this::parse),new LinearLayout.LayoutParams(0,dp(48),2));
+        LinearLayout statusCard=card(page);status=text("准备就绪 · 粘贴分享链接开始解析",14);status.setTextColor(TEAL);statusCard.addView(status);
+        results=new LinearLayout(this);results.setOrientation(LinearLayout.VERTICAL);page.addView(results,new LinearLayout.LayoutParams(-1,-2));
+        TextView foot=text("仅保存你有权保存的内容 · 文件存入 下载/LiveClip",12);foot.setTextColor(MUTED);page.addView(foot);
     }
     private void message(String s){status.setText(s);}
     private static HttpURLConnection connection(String raw) throws Exception {URL url=new URL(raw);HttpURLConnection c=(HttpURLConnection)url.openConnection();c.setConnectTimeout(10000);c.setReadTimeout(15000);c.setInstanceFollowRedirects(false);c.setRequestProperty("User-Agent","Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/120.0 Mobile Safari/537.36");return c;}
@@ -74,9 +87,27 @@ public class MainActivity extends Activity {
         throw new Exception("分享页和备用接口均未提供作品数据");
     }
     private JSONObject fetchDetail(String id) throws Exception {
-        HttpURLConnection c=connection("https://www.douyin.com/aweme/v1/web/aweme/detail/?aweme_id="+id);
+        String query="device_platform=webapp&aid=6383&channel=channel_pc_web&aweme_id="+id;
+        String cookie=CookieManager.getInstance().getCookie("https://www.douyin.com");
+        String uifid="";
+        if(cookie!=null)for(String part:cookie.split(";")){
+            String[] pair=part.trim().split("=",2);
+            if(pair.length==2&&pair[0].equalsIgnoreCase("UIFID")){uifid=pair[1];break;}
+        }
+        if(!uifid.isEmpty()){
+            long timestamp=System.currentTimeMillis()/1000;
+            query+="&uifid="+java.net.URLEncoder.encode(uifid,StandardCharsets.UTF_8)+"&timestamp="+timestamp;
+            String plain=uifid+"_"+timestamp+"_A96D855A08C0A9707F8BEF0D9A527E4E_"+query;
+            byte[] digest=MessageDigest.getInstance("MD5").digest(plain.getBytes(StandardCharsets.UTF_8));
+            StringBuilder hex=new StringBuilder();for(byte b:digest)hex.append(String.format(java.util.Locale.ROOT,"%02x",b&255));
+            query+="&x-secsdk-web-signature="+hex;
+        }
+        HttpURLConnection c=connection("https://www.douyin.com/aweme/v1/web/aweme/detail/?"+query);
         c.setRequestProperty("Referer","https://www.douyin.com/");
         c.setRequestProperty("Accept","application/json");
+        c.setRequestProperty("User-Agent","Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36");
+        if(cookie!=null&&!cookie.isEmpty())c.setRequestProperty("Cookie",cookie);
+        if(!uifid.isEmpty())c.setRequestProperty("uifid",uifid);
         try {
             if(c.getResponseCode()!=200)throw new Exception("作品详情不可用");
             try(java.io.InputStream in=c.getInputStream()){
@@ -100,17 +131,17 @@ public class MainActivity extends Activity {
         }
         return base;
     }
-    private void parse(){String text=input.getText().toString();final String url;try{url=MediaParser.shareUrl(text);}catch(Exception e){message(e.getMessage());return;}int current=++generation;results.removeAllViews();message("正在解析…");work.execute(()->{Page page=null;try{page=fetchPage(url);JSONObject data=MediaParser.extractJson(page.html);MediaParser.Result result=enrich(data,MediaParser.parse(data));runOnUiThread(()->{if(current==generation)show(result);});}catch(Exception error){String id=page==null?"":MediaParser.shareItemId(page.url);if(!id.isEmpty()){try{MediaParser.Result result=feedFallback(id);runOnUiThread(()->{if(current==generation)show(result);});return;}catch(Exception ignored){}}runOnUiThread(()->{if(current==generation)browserFallback(url,current,error.getMessage());});}});}
+    private void parse(){String text=input.getText().toString();final String url;try{url=MediaParser.shareUrl(text);}catch(Exception e){message(e.getMessage());return;}int current=++generation;results.removeAllViews();if(loginView!=null){loginView.destroy();loginView=null;}message("正在解析…");work.execute(()->{Page page=null;try{page=fetchPage(url);JSONObject data=MediaParser.extractJson(page.html);MediaParser.Result result=enrich(data,MediaParser.parse(data));runOnUiThread(()->{if(current==generation)show(result);});}catch(Exception error){String id=page==null?"":MediaParser.shareItemId(page.url);if(!id.isEmpty()){try{MediaParser.Result result=feedFallback(id);runOnUiThread(()->{if(current==generation)show(result);});return;}catch(Exception ignored){}}runOnUiThread(()->{if(current==generation)browserFallback(url,current,error.getMessage());});}});}
     private void browserFallback(String url,int current,String prior){message("网页直读失败，正在尝试浏览器模式…");if(webView!=null)webView.destroy();webView=new WebView(this);webView.getSettings().setJavaScriptEnabled(true);webView.getSettings().setDomStorageEnabled(true);webView.getSettings().setAllowFileAccess(false);webView.getSettings().setAllowContentAccess(false);webView.setWebViewClient(new WebViewClient(){boolean done=false;
-        @Override public void onPageFinished(WebView view,String loaded){if(done||current!=generation)return;view.evaluateJavascript("(function(){try{if(window._ROUTER_DATA)return JSON.stringify(window._ROUTER_DATA);var e=document.getElementById('RENDER_DATA');if(e)return decodeURIComponent(e.textContent);return ''}catch(e){return ''}})()",value->{if(done||current!=generation)return;try{String decoded=new JSONArray("["+value+"]").getString(0);if(decoded.isEmpty())throw new Exception("浏览器页面未包含作品数据");JSONObject data=new JSONObject(decoded);MediaParser.Result result=MediaParser.parse(data);done=true;message("正在查找实况视频…");work.execute(()->{MediaParser.Result complete=enrich(data,result);runOnUiThread(()->{if(current==generation)show(complete);if(webView==view){view.destroy();webView=null;}});});}catch(Exception ex){message("解析失败："+prior+"；浏览器模式："+ex.getMessage());}});}
+        @Override public void onPageFinished(WebView view,String loaded){if(done||current!=generation)return;view.evaluateJavascript("(function(){try{if(window._ROUTER_DATA)return JSON.stringify(window._ROUTER_DATA);var e=document.getElementById('RENDER_DATA');if(e)return decodeURIComponent(e.textContent);return ''}catch(e){return ''}})()",value->{if(done||current!=generation)return;try{String decoded=new JSONArray("["+value+"]").getString(0);if(decoded.isEmpty())throw new Exception("浏览器页面未包含作品数据");JSONObject data=new JSONObject(decoded);MediaParser.Result result=MediaParser.parse(data);done=true;message("正在查找实况视频…");work.execute(()->{MediaParser.Result complete=enrich(data,result);runOnUiThread(()->{if(current==generation)show(complete);if(webView==view){view.destroy();webView=null;}});});}catch(Exception ex){message("解析失败："+prior+"；浏览器模式："+ex.getMessage());if(results.getChildCount()==0){LinearLayout card=card(results);card.addView(text("作品详情暂不可用。可以登录抖音网页后重试。",14));card.addView(button("打开抖音网页登录",this::showLogin));}}});}
     });webView.loadUrl(url);}
-    private void show(MediaParser.Result r){message("解析成功 · "+r.type);results.removeAllViews();results.addView(text(r.title,21));if(!r.author.isEmpty())results.addView(text("作者："+r.author,14));if(!r.video.isEmpty()){results.addView(button("保存无水印视频",()->save(r.video,"mp4","video/mp4")));if(!r.videoCover.isEmpty())loadPreview(r.videoCover,0);Button preview=button("播放视频预览",()->{});preview.setOnClickListener(v->{preview.setEnabled(false);VideoView player=new VideoView(this);MediaController controls=new MediaController(this);player.setMediaController(controls);results.addView(player,new LinearLayout.LayoutParams(-1,dp(240)));player.setOnPreparedListener(mp->player.start());player.setOnErrorListener((mp,what,extra)->{message("预览加载失败，可直接点击保存视频");return true;});player.setVideoURI(Uri.parse(r.video));});results.addView(preview);}
-        int i=0;for(MediaParser.Asset a:r.images){final int index=++i;results.addView(text("第 "+index+" 张",17));results.addView(button("保存原图",()->save(a.image,extension(a.image,"jpg"),"image/*")));if(!a.live.isEmpty())results.addView(button("保存第 "+index+" 张的动态视频 MP4",()->save(a.live,"mp4","video/mp4")));loadPreview(a.image,index);}
-        if(!r.images.isEmpty())results.addView(button("全部保存（共 "+r.images.size()+" 张）",()->{for(MediaParser.Asset a:r.images){save(a.image,extension(a.image,"jpg"),"image/*");if(!a.live.isEmpty())save(a.live,"mp4","video/mp4");}}));
-        if("实况图文".equals(r.type))results.addView(text("动态视频以 MP4 保存到下载目录；原图和视频分别保存。",13));
-        else if("图文".equals(r.type))results.addView(text("当前作品数据只提供了静态图片。如作品确有动态内容，请将分享链接发来以便适配。",13));}
+    private void show(MediaParser.Result r){message("解析成功 · "+r.type);results.removeAllViews();LinearLayout info=card(results);TextView title=text(r.title,20);title.setTypeface(null,Typeface.BOLD);info.addView(title);if(!r.author.isEmpty()){TextView author=text("作者 · "+r.author,13);author.setTextColor(MUTED);info.addView(author);}
+        if(!r.video.isEmpty()){LinearLayout videoCard=card(results);videoCard.addView(text("视频",18));if(!r.videoCover.isEmpty())loadPreview(videoCard,r.videoCover);videoCard.addView(button("下载无水印视频",()->save(r.video,"mp4","video/mp4")),new LinearLayout.LayoutParams(-1,dp(48)));Button preview=button("播放视频预览",()->{});preview.setBackground(shape(Color.rgb(228,241,237),13));preview.setTextColor(TEAL);preview.setOnClickListener(v->{preview.setEnabled(false);VideoView player=new VideoView(this);MediaController controls=new MediaController(this);player.setMediaController(controls);videoCard.addView(player,new LinearLayout.LayoutParams(-1,dp(240)));player.setOnPreparedListener(mp->player.start());player.setOnErrorListener((mp,what,extra)->{message("预览加载失败，可直接下载视频");return true;});player.setVideoURI(Uri.parse(r.video));});LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,dp(48));lp.topMargin=dp(9);videoCard.addView(preview,lp);}
+        int i=0;for(MediaParser.Asset a:r.images){final int index=++i;LinearLayout photoCard=card(results);TextView photoTitle=text("第 "+index+" 张"+(a.live.isEmpty()?" · 原图":" · 实况"),17);photoTitle.setTypeface(null,Typeface.BOLD);photoCard.addView(photoTitle);loadPreview(photoCard,a.image);photoCard.addView(button("下载原图",()->save(a.image,extension(a.image,"jpg"),"image/*")),new LinearLayout.LayoutParams(-1,dp(48)));if(!a.live.isEmpty()){LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,dp(48));lp.topMargin=dp(9);photoCard.addView(button("下载动态视频 MP4",()->save(a.live,"mp4","video/mp4")),lp);}}
+        if(!r.images.isEmpty()){LinearLayout actions=card(results);actions.addView(button("全部保存 · "+r.images.size()+" 张",()->{for(MediaParser.Asset a:r.images){save(a.image,extension(a.image,"jpg"),"image/*");if(!a.live.isEmpty())save(a.live,"mp4","video/mp4");}}),new LinearLayout.LayoutParams(-1,dp(48)));if(r.images.stream().anyMatch(a->a.live.isEmpty())){TextView detail=text("有些图片只返回了静态原图。若作品含实况，可登录抖音网页后重试；能否获取 MP4 取决于作品详情数据。",13);detail.setTextColor(MUTED);actions.addView(detail);Button login=button("打开抖音网页登录",this::showLogin);login.setBackground(shape(Color.rgb(228,241,237),13));login.setTextColor(TEAL);actions.addView(login,new LinearLayout.LayoutParams(-1,dp(48)));}}}
+    private void showLogin(){if(loginView!=null)return;LinearLayout panel=card(results);panel.addView(text("抖音官网登录",18));TextView tip=text("下方打开 www.douyin.com。登录完成后点“重新解析”；网页会话仅用于请求抖音作品详情。",13);tip.setTextColor(MUTED);panel.addView(tip);panel.addView(button("登录完成 · 重新解析",this::parse),new LinearLayout.LayoutParams(-1,dp(48)));loginView=new WebView(this);loginView.getSettings().setJavaScriptEnabled(true);loginView.getSettings().setDomStorageEnabled(true);CookieManager.getInstance().setAcceptCookie(true);loginView.setWebViewClient(new WebViewClient());panel.addView(loginView,new LinearLayout.LayoutParams(-1,dp(480)));loginView.loadUrl("https://www.douyin.com/");}
     private String extension(String url,String fallback){try{String p=new URL(url).getPath().toLowerCase();for(String x:new String[]{"jpg","jpeg","png","webp","gif"})if(p.endsWith("."+x))return x;}catch(Exception ignored){}return fallback;}
-    private void loadPreview(String url,int id){ImageView image=new ImageView(this);image.setScaleType(ImageView.ScaleType.CENTER_CROP);results.addView(image,new LinearLayout.LayoutParams(-1,dp(230)));work.execute(()->{try{HttpURLConnection c=connection(url);c.setInstanceFollowRedirects(true);c.setReadTimeout(10000);try(java.io.InputStream in=c.getInputStream()){byte[] b=in.readNBytes(2_000_000);android.graphics.Bitmap bitmap=BitmapFactory.decodeByteArray(b,0,b.length);runOnUiThread(()->{if(bitmap!=null)image.setImageBitmap(bitmap);});}finally{c.disconnect();}}catch(Exception ignored){}});}
+    private void loadPreview(LinearLayout parent,String url){ImageView image=new ImageView(this);image.setScaleType(ImageView.ScaleType.CENTER_CROP);image.setBackground(shape(BG,12));LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,dp(220));lp.topMargin=dp(9);lp.bottomMargin=dp(12);parent.addView(image,lp);work.execute(()->{try{HttpURLConnection c=connection(url);c.setInstanceFollowRedirects(true);c.setReadTimeout(10000);try(java.io.InputStream in=c.getInputStream()){byte[] b=in.readNBytes(2_000_000);android.graphics.Bitmap bitmap=BitmapFactory.decodeByteArray(b,0,b.length);runOnUiThread(()->{if(bitmap!=null)image.setImageBitmap(bitmap);});}finally{c.disconnect();}}catch(Exception ignored){}});}
     private void save(String url,String extension,String mime){try{Uri uri=Uri.parse(url);if(!"https".equals(uri.getScheme())||uri.getHost()==null)throw new Exception("不支持该媒体地址");DownloadManager.Request request=new DownloadManager.Request(uri);request.setTitle("拾影作品");request.setMimeType(mime);request.addRequestHeader("Referer","https://www.douyin.com/");request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS,"LiveClip/"+System.currentTimeMillis()+"_"+Math.abs(url.hashCode())+"."+extension);((DownloadManager)getSystemService(DOWNLOAD_SERVICE)).enqueue(request);Toast.makeText(this,"已加入下载队列",Toast.LENGTH_SHORT).show();}catch(Exception e){message("保存失败："+e.getMessage());}}
-    @Override protected void onDestroy(){generation++;if(webView!=null)webView.destroy();work.shutdownNow();super.onDestroy();}
+    @Override protected void onDestroy(){generation++;if(webView!=null)webView.destroy();if(loginView!=null)loginView.destroy();work.shutdownNow();super.onDestroy();}
 }
