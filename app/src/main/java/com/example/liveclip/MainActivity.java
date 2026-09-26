@@ -86,6 +86,12 @@ public class MainActivity extends Activity {
         }
         throw new Exception("分享页和备用接口均未提供作品数据");
     }
+    private MediaParser.Result detailFallback(String id) throws Exception {
+        if(!id.matches("[0-9]{5,30}"))throw new Exception("无法识别作品 ID");
+        JSONObject detail=fetchDetail(id);
+        if(!id.equals(MediaParser.itemId(detail)))throw new Exception("详情接口未返回该作品");
+        return MediaParser.parse(detail);
+    }
     private JSONObject fetchDetail(String id) throws Exception {
         String query="device_platform=webapp&aid=6383&channel=channel_pc_web&aweme_id="+id;
         String cookie=CookieManager.getInstance().getCookie("https://www.douyin.com");
@@ -131,7 +137,7 @@ public class MainActivity extends Activity {
         }
         return base;
     }
-    private void parse(){String text=input.getText().toString();final String url;try{url=MediaParser.shareUrl(text);}catch(Exception e){message(e.getMessage());return;}int current=++generation;results.removeAllViews();if(loginView!=null){loginView.destroy();loginView=null;}message("正在解析…");work.execute(()->{Page page=null;try{page=fetchPage(url);JSONObject data=MediaParser.extractJson(page.html);MediaParser.Result result=enrich(data,MediaParser.parse(data));runOnUiThread(()->{if(current==generation)show(result);});}catch(Exception error){String id=page==null?"":MediaParser.shareItemId(page.url);if(!id.isEmpty()){try{MediaParser.Result result=feedFallback(id);runOnUiThread(()->{if(current==generation)show(result);});return;}catch(Exception ignored){}}runOnUiThread(()->{if(current==generation)browserFallback(url,current,error.getMessage());});}});}
+    private void parse(){String text=input.getText().toString();final String url;try{url=MediaParser.shareUrl(text);}catch(Exception e){message(e.getMessage());return;}int current=++generation;results.removeAllViews();if(loginView!=null){loginView.destroy();loginView=null;}message("正在解析…");work.execute(()->{Page page=null;try{page=fetchPage(url);JSONObject data=MediaParser.extractJson(page.html);MediaParser.Result result=enrich(data,MediaParser.parse(data));runOnUiThread(()->{if(current==generation)show(result);});}catch(Exception error){String id=page==null?"":MediaParser.shareItemId(page.url);if(!id.isEmpty()){boolean note=page.url.matches(".*?/share/(?:note|slides)/.*");for(int pass=0;pass<2;pass++){try{MediaParser.Result result=(pass==0)==note?detailFallback(id):feedFallback(id);runOnUiThread(()->{if(current==generation)show(result);});return;}catch(Exception ignored){}}}runOnUiThread(()->{if(current==generation)browserFallback(url,current,error.getMessage());});}});}
     private void browserFallback(String url,int current,String prior){message("网页直读失败，正在尝试浏览器模式…");if(webView!=null)webView.destroy();webView=new WebView(this);webView.getSettings().setJavaScriptEnabled(true);webView.getSettings().setDomStorageEnabled(true);webView.getSettings().setAllowFileAccess(false);webView.getSettings().setAllowContentAccess(false);webView.setWebViewClient(new WebViewClient(){boolean done=false;
         @Override public void onPageFinished(WebView view,String loaded){if(done||current!=generation)return;view.evaluateJavascript("(function(){try{if(window._ROUTER_DATA)return JSON.stringify(window._ROUTER_DATA);var e=document.getElementById('RENDER_DATA');if(e)return decodeURIComponent(e.textContent);return ''}catch(e){return ''}})()",value->{if(done||current!=generation)return;try{String decoded=new JSONArray("["+value+"]").getString(0);if(decoded.isEmpty())throw new Exception("浏览器页面未包含作品数据");JSONObject data=new JSONObject(decoded);MediaParser.Result result=MediaParser.parse(data);done=true;message("正在查找实况视频…");work.execute(()->{MediaParser.Result complete=enrich(data,result);runOnUiThread(()->{if(current==generation)show(complete);if(webView==view){view.destroy();webView=null;}});});}catch(Exception ex){message("解析失败："+prior+"；浏览器模式："+ex.getMessage());if(results.getChildCount()==0){LinearLayout card=card(results);card.addView(text("作品详情暂不可用。可以登录抖音网页后重试。",14));card.addView(button("打开抖音网页登录",MainActivity.this::showLogin));}}});}
     });webView.loadUrl(url);}
