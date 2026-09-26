@@ -40,7 +40,7 @@ public final class MediaParser {
         if (root == null || budget[0]-- <= 0 || visited.contains(root)) return null;
         visited.add(root);
         if (root instanceof JSONObject) { JSONObject o = (JSONObject) root;
-            if ((o.has("aweme_id") || o.has("awemeId") || o.has("item_id")) && (o.has("images") || o.has("image_list") || o.has("video"))) return o;
+            if ((o.has("aweme_id") || o.has("awemeId") || o.has("item_id")) && (o.has("images") || o.has("image_list") || o.has("image_post_info") || o.has("video"))) return o;
             java.util.Iterator<String> keys = o.keys(); while (keys.hasNext()) { String k = keys.next(); JSONObject found = findItem(o.opt(k), visited, budget); if (found != null) return found; }
         } else if (root instanceof JSONArray) { JSONArray a = (JSONArray) root; for (int i = 0; i < a.length(); i++) { JSONObject found = findItem(a.opt(i), visited, budget); if (found != null) return found; } }
         return null;
@@ -51,14 +51,47 @@ public final class MediaParser {
         return "";
     }
     private static String choose(JSONObject o, String... keys) { if(o==null)return "";for(String k:keys){String found=url(o.opt(k));if(!found.isEmpty())return found;}return ""; }
+    private static String motion(JSONObject image) {
+        JSONObject video=image.optJSONObject("video");
+        String found=choose(video,"play_addr","playAddr","play_addr_h264","download_addr","video_url","url_list");
+        if(!found.isEmpty())return found;
+        return choose(image,"video_url","videoUrl","live_photo","live_photo_url","livePhotoUrl");
+    }
+    private static JSONArray imageList(JSONObject item) {
+        JSONObject post=item.optJSONObject("image_post_info");
+        JSONArray images=post==null?null:post.optJSONArray("images");
+        if(images==null&&post!=null)images=post.optJSONArray("image_list");
+        if(images==null)images=item.optJSONArray("images");
+        if(images==null)images=item.optJSONArray("image_list");
+        if(images==null)images=item.optJSONArray("image_infos");
+        return images;
+    }
     public static Result parse(JSONObject root) throws Exception {
         JSONObject item=findItem(root,new HashSet<>(),new int[]{20000}); if(item==null)throw new Exception("未找到视频或图文作品数据");
         Result result=new Result();result.title=item.optString("desc",item.optString("title","抖音作品"));result.author=item.optJSONObject("author") == null ? "" : item.optJSONObject("author").optString("nickname", "");
-        JSONArray images=item.optJSONArray("images");if(images==null)images=item.optJSONArray("image_list");
-        if(images!=null)for(int i=0;i<images.length();i++){JSONObject image=images.optJSONObject(i);if(image==null)continue;String still=choose(image,"url_list","urlList","download_url","display_image","origin_image");String live=choose(image,"video","video_url","live_photo");if(!still.isEmpty())result.images.add(new Asset(still,live));}
+        JSONArray images=imageList(item);
+        if(images!=null)for(int i=0;i<images.length();i++){JSONObject image=images.optJSONObject(i);if(image==null)continue;String still=choose(image,"url_list","urlList","download_url","display_image","origin_image","original_image","image_url");String live=motion(image);if(!still.isEmpty())result.images.add(new Asset(still,live));}
         if(!result.images.isEmpty()){result.type=result.images.stream().anyMatch(a->!a.live.isEmpty())?"实况图文":"图文";return result;}
         JSONObject video=item.optJSONObject("video"); result.video=choose(video,"play_addr","playAddr","play_addr_h264");if(result.video.isEmpty())result.video=choose(item,"video_play_addr");result.video=result.video.replaceAll("playwm(?=[/?])","play");
         if(result.video.isEmpty())throw new Exception("作品没有可用媒体地址");result.type="视频";return result;
+    }
+    public static String itemId(JSONObject root) {
+        JSONObject item=findItem(root,new HashSet<>(),new int[]{20000});
+        if(item==null)return "";
+        String id=item.optString("aweme_id",item.optString("awemeId",item.optString("item_id","")));
+        return id.matches("[0-9]{5,30}")?id:"";
+    }
+    public static Result mergeMotion(Result base, Result detailed) {
+        if(base.images.isEmpty()||detailed.images.isEmpty())return base;
+        Result merged=new Result();merged.title=base.title;merged.author=base.author;merged.video=base.video;
+        for(int i=0;i<base.images.size();i++){
+            Asset image=base.images.get(i);
+            String live=image.live;
+            if(live.isEmpty()&&i<detailed.images.size())live=detailed.images.get(i).live;
+            merged.images.add(new Asset(image.image,live));
+        }
+        merged.type=merged.images.stream().anyMatch(a->!a.live.isEmpty())?"实况图文":"图文";
+        return merged;
     }
     public static final class Asset { public final String image,live; Asset(String image,String live){this.image=image;this.live=live;} }
     public static final class Result { public String title,author,type,video=""; public final ArrayList<Asset> images=new ArrayList<>(); }
