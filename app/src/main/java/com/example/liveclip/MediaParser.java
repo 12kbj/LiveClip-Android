@@ -41,7 +41,7 @@ public final class MediaParser {
         visited.add(root);
         if (root instanceof JSONObject) { JSONObject o = (JSONObject) root;
             if ((o.has("aweme_id") || o.has("awemeId") || o.has("item_id")) && (o.has("images") || o.has("image_list") || o.has("video"))) return o;
-            for (String k : o.keySet()) { JSONObject found = findItem(o.opt(k), visited, budget); if (found != null) return found; }
+            java.util.Iterator<String> keys = o.keys(); while (keys.hasNext()) { String k = keys.next(); JSONObject found = findItem(o.opt(k), visited, budget); if (found != null) return found; }
         } else if (root instanceof JSONArray) { JSONArray a = (JSONArray) root; for (int i = 0; i < a.length(); i++) { JSONObject found = findItem(a.opt(i), visited, budget); if (found != null) return found; } }
         return null;
     }
