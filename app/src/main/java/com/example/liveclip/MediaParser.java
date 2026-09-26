@@ -4,6 +4,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 import java.net.URL;
 import java.net.URLDecoder;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -61,7 +62,16 @@ public final class MediaParser {
         JSONObject video=image.optJSONObject("video");
         String found=choose(video,"play_addr","playAddr","play_addr_h264","play_addr_lowbr","download_addr","video_url","url_list");
         if(!found.isEmpty())return found;
-        return choose(image,"video_play_addr","video_download_addr","video_url","videoUrl","live_photo","live_photo_url","livePhotoUrl","video");
+        found=choose(image,"video_play_addr","video_download_addr","video_url","videoUrl","live_photo","live_photo_url","livePhotoUrl","video");
+        if(!found.isEmpty())return found;
+        if(video==null){video=image.optJSONObject("video_play_addr");if(video==null)video=image.optJSONObject("video_download_addr");}
+        String id=video==null?"":video.optString("vid","");
+        if(id.isEmpty()&&video!=null){JSONObject play=video.optJSONObject("play_addr");if(play==null)play=video.optJSONObject("download_addr");id=play==null?video.optString("uri",""):play.optString("uri","");}
+        return playFromUri(id);
+    }
+    private static String playFromUri(String id){
+        if(id==null||!id.matches("[A-Za-z0-9_\\-]{10,200}")||id.toLowerCase(java.util.Locale.ROOT).contains("mp3"))return "";
+        return "https://www.iesdouyin.com/aweme/v1/play/?video_id="+URLEncoder.encode(id,StandardCharsets.UTF_8)+"&ratio=1080p";
     }
     private static JSONArray imageList(JSONObject item) {
         JSONObject post=item.optJSONObject("image_post_info");
@@ -84,7 +94,7 @@ public final class MediaParser {
         JSONArray images=imageList(item);
         if(images!=null)for(int i=0;i<images.length();i++){JSONObject image=images.optJSONObject(i);if(image==null)continue;String still=choose(image,"url_list","urlList","download_url","display_image","origin_image","original_image","image_url");String live=motion(image);if(!still.isEmpty())result.images.add(new Asset(still,live));}
         if(!result.images.isEmpty()){result.type=result.images.stream().anyMatch(a->!a.live.isEmpty())?"实况图文":"图文";return result;}
-        JSONObject video=item.optJSONObject("video"); result.video=choose(video,"play_addr","playAddr","play_addr_h264","play_addr_lowbr","download_addr");if(result.video.isEmpty())result.video=choose(item,"video_play_addr");result.video=result.video.replaceAll("playwm(?=[/?])","play");
+        JSONObject video=item.optJSONObject("video"); result.video=choose(video,"play_addr","playAddr","play_addr_h264","play_addr_lowbr","download_addr");if(result.video.isEmpty())result.video=choose(item,"video_play_addr");if(result.video.isEmpty()&&video!=null){JSONObject play=video.optJSONObject("play_addr");result.video=playFromUri(play==null?video.optString("vid",""):play.optString("uri",""));}result.video=result.video.replaceAll("playwm(?=[/?])","play");
         result.videoCover=choose(video,"cover","origin_cover","dynamic_cover","ratio_cover");
         if(result.video.isEmpty())throw new Exception("作品没有可用媒体地址");result.type="视频";return result;
     }
