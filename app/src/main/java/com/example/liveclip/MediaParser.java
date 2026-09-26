@@ -12,7 +12,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public final class MediaParser {
-    private static final Set<String> HOSTS = Set.of("v.douyin.com", "www.douyin.com", "douyin.com", "iesdouyin.com");
+    private static final Set<String> HOSTS = Set.of("douyin.com", "iesdouyin.com");
     private MediaParser() {}
     public static String shareUrl(String text) throws Exception {
         Matcher matcher = Pattern.compile("https://[^\\s<>\"'，。]+", Pattern.CASE_INSENSITIVE).matcher(text);
@@ -20,7 +20,13 @@ public final class MediaParser {
         throw new Exception("请粘贴抖音作品分享链接");
     }
     public static boolean allowed(String raw) {
-        try { URL url = new URL(raw); return "https".equals(url.getProtocol()) && HOSTS.contains(url.getHost().toLowerCase()) && url.toURI().getUserInfo() == null; } catch (Exception e) { return false; }
+        try {
+            URL url = new URL(raw);
+            if (!"https".equals(url.getProtocol()) || url.toURI().getUserInfo() != null) return false;
+            String host = url.getHost().toLowerCase(java.util.Locale.ROOT);
+            for (String domain : HOSTS) if (host.equals(domain) || host.endsWith("." + domain)) return true;
+            return false;
+        } catch (Exception e) { return false; }
     }
     public static JSONObject extractJson(String html) throws Exception {
         for (String marker : new String[]{"window._ROUTER_DATA =", "window._ROUTER_DATA="}) {
