@@ -59,9 +59,9 @@ public final class MediaParser {
     private static String choose(JSONObject o, String... keys) { if(o==null)return "";for(String k:keys){String found=url(o.opt(k));if(!found.isEmpty())return found;}return ""; }
     private static String motion(JSONObject image) {
         JSONObject video=image.optJSONObject("video");
-        String found=choose(video,"play_addr","playAddr","play_addr_h264","download_addr","video_url","url_list");
+        String found=choose(video,"play_addr","playAddr","play_addr_h264","play_addr_lowbr","download_addr","video_url","url_list");
         if(!found.isEmpty())return found;
-        return choose(image,"video_url","videoUrl","live_photo","live_photo_url","livePhotoUrl");
+        return choose(image,"video_play_addr","video_download_addr","video_url","videoUrl","live_photo","live_photo_url","livePhotoUrl","video");
     }
     private static JSONArray imageList(JSONObject item) {
         JSONObject post=item.optJSONObject("image_post_info");
@@ -70,7 +70,13 @@ public final class MediaParser {
         if(images==null)images=item.optJSONArray("images");
         if(images==null)images=item.optJSONArray("image_list");
         if(images==null)images=item.optJSONArray("image_infos");
+        if(images==null)images=item.optJSONArray("original_images");
         return images;
+    }
+    public static String shareItemId(String raw) {
+        if(!allowed(raw))return "";
+        Matcher m=Pattern.compile("/(?:share/)?(?:video|note|slides)/(\\d{5,30})(?:[/?#]|$)").matcher(raw);
+        return m.find()?m.group(1):"";
     }
     public static Result parse(JSONObject root) throws Exception {
         JSONObject item=findItem(root,new HashSet<>(),new int[]{20000}); if(item==null)throw new Exception("未找到视频或图文作品数据");
@@ -78,7 +84,8 @@ public final class MediaParser {
         JSONArray images=imageList(item);
         if(images!=null)for(int i=0;i<images.length();i++){JSONObject image=images.optJSONObject(i);if(image==null)continue;String still=choose(image,"url_list","urlList","download_url","display_image","origin_image","original_image","image_url");String live=motion(image);if(!still.isEmpty())result.images.add(new Asset(still,live));}
         if(!result.images.isEmpty()){result.type=result.images.stream().anyMatch(a->!a.live.isEmpty())?"实况图文":"图文";return result;}
-        JSONObject video=item.optJSONObject("video"); result.video=choose(video,"play_addr","playAddr","play_addr_h264");if(result.video.isEmpty())result.video=choose(item,"video_play_addr");result.video=result.video.replaceAll("playwm(?=[/?])","play");
+        JSONObject video=item.optJSONObject("video"); result.video=choose(video,"play_addr","playAddr","play_addr_h264","play_addr_lowbr","download_addr");if(result.video.isEmpty())result.video=choose(item,"video_play_addr");result.video=result.video.replaceAll("playwm(?=[/?])","play");
+        result.videoCover=choose(video,"cover","origin_cover","dynamic_cover","ratio_cover");
         if(result.video.isEmpty())throw new Exception("作品没有可用媒体地址");result.type="视频";return result;
     }
     public static String itemId(JSONObject root) {
@@ -100,5 +107,5 @@ public final class MediaParser {
         return merged;
     }
     public static final class Asset { public final String image,live; Asset(String image,String live){this.image=image;this.live=live;} }
-    public static final class Result { public String title,author,type,video=""; public final ArrayList<Asset> images=new ArrayList<>(); }
+    public static final class Result { public String title,author,type,video="",videoCover=""; public final ArrayList<Asset> images=new ArrayList<>(); }
 }
