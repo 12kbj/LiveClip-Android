@@ -29,5 +29,7 @@ public class MediaParserTest {
         assertEquals("https://example.org/motion.mp4",images.images.get(0).live);
         JSONObject video=new JSONObject("{\"aweme_id\":\"7689467523242316539\",\"video\":{\"play_addr\":{\"url_list\":[\"https://example.org/play.mp4\"]},\"cover\":{\"url_list\":[\"https://example.org/cover.jpg\"]}}}");
         assertEquals("https://example.org/cover.jpg",MediaParser.parse(video).videoCover);
+        JSONObject uriOnly=new JSONObject("{\"aweme_id\":\"7688596112890995087\",\"images\":[{\"url_list\":[\"https://example.org/still.jpg\"],\"video\":{\"play_addr\":{\"uri\":\"v0200fg10000examplevideoid\"}}}]}");
+        assertEquals("https://www.iesdouyin.com/aweme/v1/play/?video_id=v0200fg10000examplevideoid&ratio=1080p",MediaParser.parse(uriOnly).images.get(0).live);
     }
 }
