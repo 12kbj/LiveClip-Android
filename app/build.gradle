@@ -1,4 +1,8 @@
 plugins { id 'com.android.application' }
+dependencies {
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.json:json:20240303'
+}
 android {
     namespace 'com.example.liveclip'
     compileSdk 35
