@@ -18,7 +18,7 @@ public final class MediaParser {
     public static String shareUrl(String text) throws Exception {
         Matcher matcher = Pattern.compile("https://[^\\s<>\"'，。]+", Pattern.CASE_INSENSITIVE).matcher(text);
         while (matcher.find()) { String url = matcher.group().replaceAll("[）)】]+$", ""); if (allowed(url)) return url; }
-        throw new Exception("请粘贴抖音作品分享链接");
+        throw new Exception("请输入正确的抖音作品分享链接");
     }
     public static boolean allowed(String raw) {
         try {
@@ -30,7 +30,7 @@ public final class MediaParser {
         } catch (Exception e) { return false; }
     }
     public static JSONObject extractJson(String html) throws Exception {
-        for (String marker : new String[]{"window._ROUTER_DATA =", "window._ROUTER_DATA="}) {
+        for (String marker : new String[]{"window._ROUTER_DATA =", "window._ROUTER_DATA=", "window._SSR_DATA=", "window.__UNIVERSAL_DATA_FOR_REHYDRATION__="}) {
             int at = html.indexOf(marker); if (at < 0) continue;
             int start = html.indexOf('{', at + marker.length()); if (start < 0) continue;
             int depth = 0; boolean quoted = false, escaped = false;
@@ -54,7 +54,7 @@ public final class MediaParser {
     }
     private static String url(Object value) { if (value instanceof String) return ((String)value).startsWith("https://") ? (String)value : "";
         if (value instanceof JSONArray) { JSONArray a=(JSONArray)value; for(int i=0;i<a.length();i++){String found=url(a.opt(i));if(!found.isEmpty())return found;} }
-        if (value instanceof JSONObject) { JSONObject o=(JSONObject)value;for(String k:new String[]{"url_list","urlList","url","uri","src"}){String found=url(o.opt(k));if(!found.isEmpty())return found;} }
+        if (value instanceof JSONObject) { JSONObject o=(JSONObject)value;for(String k:new String[]{"url_list","urlList","url","uri","src","play_addr","playAddr","download_addr"}){String found=url(o.opt(k));if(!found.isEmpty())return found;} }
         return "";
     }
     private static String choose(JSONObject o, String... keys) { if(o==null)return "";for(String k:keys){String found=url(o.opt(k));if(!found.isEmpty())return found;}return ""; }
@@ -65,8 +65,9 @@ public final class MediaParser {
         found=choose(image,"video_play_addr","video_download_addr","video_url","videoUrl","live_photo","live_photo_url","livePhotoUrl","video");
         if(!found.isEmpty())return found;
         if(video==null){video=image.optJSONObject("video_play_addr");if(video==null)video=image.optJSONObject("video_download_addr");}
-        String id=video==null?"":video.optString("vid","");
+        String id=video==null?"":video.optString("vid",video.optString("video_id",""));
         if(id.isEmpty()&&video!=null){JSONObject play=video.optJSONObject("play_addr");if(play==null)play=video.optJSONObject("download_addr");id=play==null?video.optString("uri",""):play.optString("uri","");}
+        if(id.isEmpty())id=image.optString("video_id",image.optString("videoId",""));
         return playFromUri(id);
     }
     private static String playFromUri(String id){
@@ -86,6 +87,8 @@ public final class MediaParser {
     public static String shareItemId(String raw) {
         if(!allowed(raw))return "";
         Matcher m=Pattern.compile("/(?:share/)?(?:video|note|slides)/(\\d{5,30})(?:[/?#]|$)").matcher(raw);
+        if(m.find())return m.group(1);
+        m=Pattern.compile("[?&](?:modal_id|aweme_id)=(\\d{5,30})(?:&|#|$)").matcher(raw);
         return m.find()?m.group(1):"";
     }
     public static Result parse(JSONObject root) throws Exception {
@@ -117,5 +120,5 @@ public final class MediaParser {
         return merged;
     }
     public static final class Asset { public final String image,live; Asset(String image,String live){this.image=image;this.live=live;} }
-    public static final class Result { public String title,author,type,video="",videoCover=""; public final ArrayList<Asset> images=new ArrayList<>(); }
+    public static final class Result { public String title,author,type,video="",videoCover="",motionIssue=""; public final ArrayList<Asset> images=new ArrayList<>(); }
 }
