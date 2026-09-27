@@ -1,5 +1,11 @@
 # 拾影 LiveClip（Android）
 
+## 📲 安卓版下载
+
+**[点击下载最新安装包：拾影 v0.3.0 APK](https://github.com/12kbj/LiveClip-Android/releases/download/v0.3.0/LiveClip-v0.3.0-debug.apk)**
+
+若点击后没有开始下载，请打开 [v0.3.0 发布页面](https://github.com/12kbj/LiveClip-Android/releases/tag/v0.3.0)，展开 **Assets**，选择 `LiveClip-v0.3.0-debug.apk`。APK 仅适用于安卓手机，iPhone 无法安装。该版本为预览版，实况 MP4 功能仍需按具体作品验证。
+
 独立编写的抖音分享链接媒体保存实验项目。支持普通视频、图文原图，以及作品详情提供的实况静态原图与短片。打开 App 时若前台剪贴板有有效抖音分享链接，会自动填入并解析；也可手动粘贴。解析后可分别保存原图与动态 MP4 到 Downloads/LiveClip。
 
 ## 当前状态
