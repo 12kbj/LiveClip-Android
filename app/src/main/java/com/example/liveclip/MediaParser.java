@@ -2,6 +2,7 @@ package com.example.liveclip;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
+import org.json.JSONTokener;
 import java.net.URL;
 import java.net.URLDecoder;
 import java.net.URLEncoder;
@@ -15,6 +16,44 @@ import java.util.regex.Pattern;
 public final class MediaParser {
     private static final Set<String> HOSTS = Set.of("douyin.com", "iesdouyin.com");
     private MediaParser() {}
+    /** Decode page data without executing page scripts. RSC text may span several pushes. */
+    public static Result parsePage(String html, String expectedId) throws Exception {
+        if(html.length()>6_000_000)throw new Exception("页面数据过大");
+        Result best=null;
+        try{best=parseTarget(extractJson(html),expectedId);}catch(Exception ignored){}
+        StringBuilder stream=new StringBuilder();
+        Matcher pushes=Pattern.compile("self\\.(?:__pace_f|__next_f)\\.push\\s*\\(").matcher(html);
+        while(pushes.find()){
+            try{Object value=new JSONTokener(html.substring(pushes.end())).nextValue();
+                if(value instanceof JSONArray){JSONArray chunk=(JSONArray)value;
+                    if(chunk.optInt(0,-1)==1 && chunk.opt(1) instanceof String)stream.append(chunk.getString(1));
+                }
+            }catch(Exception ignored){}
+        }
+        for(String line:stream.toString().split("\\n")){
+            int colon=line.indexOf(':');if(colon<0)continue;
+            try{Object payload=new JSONTokener(line.substring(colon+1)).nextValue();
+                Result found=parseTarget(payload,expectedId);
+                best=best==null?found:mergeMotion(best,found);
+            }catch(Exception ignored){}
+        }
+        if(best==null)throw new Exception("网页未提供该作品的媒体数据");
+        return best;
+    }
+    private static Result parseTarget(Object root,String expectedId) throws Exception {
+        JSONObject item=findExpected(root,expectedId,new int[]{20000});
+        if(item==null)throw new Exception("作品 ID 不匹配");
+        return parse(item);
+    }
+    private static JSONObject findExpected(Object root,String id,int[] budget){
+        if(root==null||--budget[0]<0)return null;
+        if(root instanceof JSONObject){JSONObject o=(JSONObject)root;
+            String candidate=o.optString("aweme_id",o.optString("awemeId",o.optString("item_id","")));
+            if(!candidate.isEmpty()&&(id.isEmpty()||id.equals(candidate))&&(imageList(o)!=null||o.has("video")))return o;
+            java.util.Iterator<String> keys=o.keys();while(keys.hasNext()){JSONObject found=findExpected(o.opt(keys.next()),id,budget);if(found!=null)return found;}
+        }else if(root instanceof JSONArray){JSONArray a=(JSONArray)root;for(int i=0;i<a.length();i++){JSONObject found=findExpected(a.opt(i),id,budget);if(found!=null)return found;}}
+        return null;
+    }
     public static String shareUrl(String text) throws Exception {
         Matcher matcher = Pattern.compile("https://[^\\s<>\"'，。]+", Pattern.CASE_INSENSITIVE).matcher(text);
         while (matcher.find()) { String url = matcher.group().replaceAll("[）)】]+$", ""); if (allowed(url)) return url; }
@@ -93,9 +132,9 @@ public final class MediaParser {
     }
     public static Result parse(JSONObject root) throws Exception {
         JSONObject item=findItem(root,new HashSet<>(),new int[]{20000}); if(item==null)throw new Exception("未找到视频或图文作品数据");
-        Result result=new Result();result.title=item.optString("desc",item.optString("title","抖音作品"));result.author=item.optJSONObject("author") == null ? "" : item.optJSONObject("author").optString("nickname", "");
+        Result result=new Result();result.id=item.optString("aweme_id",item.optString("awemeId",item.optString("item_id","")));result.title=item.optString("desc",item.optString("title","抖音作品"));result.author=item.optJSONObject("author") == null ? "" : item.optJSONObject("author").optString("nickname", "");
         JSONArray images=imageList(item);
-        if(images!=null)for(int i=0;i<images.length();i++){JSONObject image=images.optJSONObject(i);if(image==null)continue;String still=choose(image,"url_list","urlList","download_url","display_image","origin_image","original_image","image_url");String live=motion(image);if(!still.isEmpty())result.images.add(new Asset(still,live));}
+        if(images!=null)for(int i=0;i<images.length();i++){JSONObject image=images.optJSONObject(i);if(image==null)continue;String still=choose(image,"url_list","urlList","download_url","display_image","origin_image","original_image","image_url");String live=motion(image);if(!still.isEmpty())result.images.add(new Asset(still,live,i));}
         if(!result.images.isEmpty()){result.type=result.images.stream().anyMatch(a->!a.live.isEmpty())?"实况图文":"图文";return result;}
         JSONObject video=item.optJSONObject("video"); result.video=choose(video,"play_addr","playAddr","play_addr_h264","play_addr_lowbr","download_addr");if(result.video.isEmpty())result.video=choose(item,"video_play_addr");if(result.video.isEmpty()&&video!=null){JSONObject play=video.optJSONObject("play_addr");result.video=playFromUri(play==null?video.optString("vid",""):play.optString("uri",""));}result.video=result.video.replaceAll("playwm(?=[/?])","play");
         result.videoCover=choose(video,"cover","origin_cover","dynamic_cover","ratio_cover");
@@ -108,17 +147,20 @@ public final class MediaParser {
         return id.matches("[0-9]{5,30}")?id:"";
     }
     public static Result mergeMotion(Result base, Result detailed) {
+        if(!base.id.equals(detailed.id))return base;
         if(base.images.isEmpty()||detailed.images.isEmpty())return base;
-        Result merged=new Result();merged.title=base.title;merged.author=base.author;merged.video=base.video;
+        Result merged=new Result();merged.id=base.id;merged.title=base.title;merged.author=base.author;merged.video=base.video;merged.videoCover=base.videoCover;merged.motionIssue=base.motionIssue;
         for(int i=0;i<base.images.size();i++){
             Asset image=base.images.get(i);
             String live=image.live;
-            if(live.isEmpty()&&i<detailed.images.size())live=detailed.images.get(i).live;
-            merged.images.add(new Asset(image.image,live));
+            if(live.isEmpty())for(Asset other:detailed.images)if(other.index==image.index){live=other.live;break;}
+            merged.images.add(new Asset(image.image,live,image.index));
         }
+        for(Asset other:detailed.images)if(merged.images.stream().noneMatch(a->a.index==other.index))merged.images.add(other);
+        merged.images.sort(java.util.Comparator.comparingInt(a->a.index));
         merged.type=merged.images.stream().anyMatch(a->!a.live.isEmpty())?"实况图文":"图文";
         return merged;
     }
-    public static final class Asset { public final String image,live; Asset(String image,String live){this.image=image;this.live=live;} }
-    public static final class Result { public String title,author,type,video="",videoCover="",motionIssue=""; public final ArrayList<Asset> images=new ArrayList<>(); }
+    public static final class Asset { public final String image,live; public final int index; Asset(String image,String live,int index){this.image=image;this.live=live;this.index=index;} }
+    public static final class Result { public String id="",title,author,type,video="",videoCover="",motionIssue=""; public final ArrayList<Asset> images=new ArrayList<>(); }
 }

@@ -40,9 +40,11 @@ public class MainActivity extends Activity {
     private static final int INK=Color.rgb(28,45,49),MUTED=Color.rgb(104,120,121),TEAL=Color.rgb(17,129,120),SURFACE=Color.WHITE,BG=Color.rgb(247,249,247);
     private final ExecutorService work=Executors.newFixedThreadPool(2);
     private EditText input; private TextView status; private LinearLayout results; private WebView webView,loginView;
+    private static final String DESKTOP_UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36";
+    private DownloadMonitor downloads;
     private int generation=0; private String lastClipboardUrl=""; private boolean firstResume=true;
-    @Override public void onCreate(Bundle saved){super.onCreate(saved);render();String shared=getIntent().getStringExtra(Intent.EXTRA_TEXT);if(shared!=null){input.setText(shared);input.post(this::parse);}}
-    @Override protected void onResume(){super.onResume();if(input!=null)input.post(this::readClipboardOnResume);}
+    @Override public void onCreate(Bundle saved){super.onCreate(saved);render();downloads=new DownloadMonitor(this);String shared=getIntent().getStringExtra(Intent.EXTRA_TEXT);if(shared!=null){input.setText(shared);input.post(this::parse);}}
+    @Override protected void onResume(){super.onResume();if(downloads!=null)downloads.start();if(input!=null)input.post(this::readClipboardOnResume);}
     @Override public void onWindowFocusChanged(boolean focused){super.onWindowFocusChanged(focused);if(focused&&input!=null)input.post(this::readClipboardOnResume);}
     private void readClipboardOnResume(){if(isFinishing()||!getWindow().getDecorView().hasWindowFocus())return;
         if(firstResume){firstResume=false;if(!input.getText().toString().trim().isEmpty())return;}
@@ -74,7 +76,8 @@ public class MainActivity extends Activity {
     private void message(String s){status.setText(s);}
     private static HttpURLConnection connection(String raw) throws Exception {URL url=new URL(raw);HttpURLConnection c=(HttpURLConnection)url.openConnection();c.setConnectTimeout(10000);c.setReadTimeout(15000);c.setInstanceFollowRedirects(false);c.setRequestProperty("User-Agent","Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/120.0 Mobile Safari/537.36");return c;}
     private static final class Page {final String html,url;Page(String html,String url){this.html=html;this.url=url;}}
-    private Page fetchPage(String raw) throws Exception {for(int i=0;i<6;i++){if(!MediaParser.allowed(raw))throw new Exception("跳转到非抖音域名，已停止解析");HttpURLConnection c=connection(raw);try{int code=c.getResponseCode();if(code>=300&&code<400){String location=c.getHeaderField("Location");if(location==null)throw new Exception("跳转缺少目标地址");raw=new URL(new URL(raw),location).toString();continue;}if(code!=200)throw new Exception("分享页返回 HTTP "+code);ByteArrayOutputStream out=new ByteArrayOutputStream();byte[] buf=new byte[8192];int n;try(java.io.InputStream in=c.getInputStream()){while((n=in.read(buf))!=-1){out.write(buf,0,n);if(out.size()>6_000_000)throw new Exception("页面数据过大");}}return new Page(out.toString(StandardCharsets.UTF_8.name()),raw);}finally{c.disconnect();}}throw new Exception("分享链接跳转次数过多");}
+    private Page fetchPage(String raw) throws Exception {return fetchPage(raw,false);}
+    private Page fetchPage(String raw,boolean desktop) throws Exception {for(int i=0;i<6;i++){if(!MediaParser.allowed(raw))throw new Exception("跳转到非抖音域名，已停止解析");HttpURLConnection c=connection(raw);if(desktop){c.setRequestProperty("User-Agent",DESKTOP_UA);String cookie=CookieManager.getInstance().getCookie(raw);if(cookie!=null)c.setRequestProperty("Cookie",cookie);}try{int code=c.getResponseCode();if(code>=300&&code<400){String location=c.getHeaderField("Location");if(location==null)throw new Exception("跳转缺少目标地址");raw=new URL(new URL(raw),location).toString();continue;}if(code!=200)throw new Exception("分享页返回 HTTP "+code);ByteArrayOutputStream out=new ByteArrayOutputStream();byte[] buf=new byte[8192];int n;try(java.io.InputStream in=c.getInputStream()){while((n=in.read(buf))!=-1){out.write(buf,0,n);if(out.size()>6_000_000)throw new Exception("页面数据过大");}}return new Page(out.toString(StandardCharsets.UTF_8.name()),raw);}finally{c.disconnect();}}throw new Exception("分享链接跳转次数过多");}
     private JSONObject fetchFeed(String host,String id) throws Exception {
         HttpURLConnection c=connection("https://"+host+"/aweme/v1/feed/?aweme_id="+id+"&aid=1128");
         c.setReadTimeout(10000);
@@ -127,7 +130,7 @@ public class MainActivity extends Activity {
         if(cookie!=null&&!cookie.isEmpty())c.setRequestProperty("Cookie",cookie);
         if(!uifid.isEmpty())c.setRequestProperty("uifid",uifid);
         try {
-            if(c.getResponseCode()!=200)throw new Exception("作品详情不可用");
+            int code=c.getResponseCode();if(code!=200)throw new Exception("作品详情 HTTP "+code);
             try(java.io.InputStream in=c.getInputStream()){
                 byte[] bytes=in.readNBytes(6_000_001);
                 if(bytes.length>6_000_000)throw new Exception("作品详情过大");
@@ -137,25 +140,55 @@ public class MainActivity extends Activity {
     }
     private MediaParser.Result enrich(JSONObject data, MediaParser.Result base) {
         if(base.images.isEmpty()||base.images.stream().allMatch(a->!a.live.isEmpty()))return base;
-        String id=MediaParser.itemId(data);
-        if(id.isEmpty())return base;
-        try{return MediaParser.mergeMotion(base,MediaParser.parse(fetchDetail(id)));}
-        catch(Exception error){base.motionIssue="详情请求失败："+error.getMessage();}
-        for(String host:new String[]{"api5-normal-c-hl.amemv.com","aweme.snssdk.com"}){
-            try{
-                JSONObject feed=fetchFeed(host,id);
-                if(id.equals(MediaParser.itemId(feed)))return MediaParser.mergeMotion(base,MediaParser.parse(feed));
-            }catch(Exception ignored){}
-        }
+        String id=base.id;if(!id.matches("[0-9]{5,30}"))return base;
+        try{JSONObject detail=fetchDetail(id);if(id.equals(MediaParser.itemId(detail)))base=MediaParser.mergeMotion(base,MediaParser.parse(detail));}
+        catch(Exception error){base.motionIssue="详情接口暂不可用";}
+        if(base.images.stream().allMatch(a->!a.live.isEmpty()))return base;
+        // A successful static-only response must not end the search for motion tracks.
+        try{Page desktop=fetchPage("https://www.douyin.com/note/"+id,true);base=MediaParser.mergeMotion(base,MediaParser.parsePage(desktop.html,id));}
+        catch(Exception ignored){}
         return base;
+    }
+    private void complete(MediaParser.Result base,int current){
+        if(current!=generation)return;
+        show(base);
+        if(base.id.matches("[0-9]{5,30}")&&!base.images.isEmpty()&&base.images.stream().anyMatch(a->a.live.isEmpty()))browserMotion(base,current);
+    }
+    private void browserMotion(MediaParser.Result base,int current){
+        message("原图已就绪 · 正在补充实况 MP4…");
+        if(webView!=null)webView.destroy();
+        WebView view=new WebView(this);webView=view;
+        view.getSettings().setJavaScriptEnabled(true);view.getSettings().setDomStorageEnabled(true);
+        view.getSettings().setUserAgentString(DESKTOP_UA);view.getSettings().setAllowFileAccess(false);view.getSettings().setAllowContentAccess(false);
+        android.os.Handler handler=new android.os.Handler(android.os.Looper.getMainLooper());
+        Runnable finish=()->{if(current==generation&&webView==view){message("解析完成 · "+base.type+"；部分图片未获取到动态视频，可登录后重试");view.destroy();webView=null;}};
+        view.setWebViewClient(new WebViewClient(){boolean started=false;
+            @Override public boolean shouldOverrideUrlLoading(WebView v,android.webkit.WebResourceRequest request){return !MediaParser.allowed(request.getUrl().toString());}
+            @Override public void onPageFinished(WebView v,String url){
+                if(started||current!=generation||webView!=view)return;started=true;
+                for(int delay:new int[]{500,2000,5000})handler.postDelayed(()->{
+                    if(current!=generation||webView!=view)return;
+                    view.evaluateJavascript("document.documentElement.outerHTML",value->{
+                        if(current!=generation||webView!=view)return;
+                        work.execute(()->{try{
+                            String html=new JSONArray("["+value+"]").getString(0);
+                            MediaParser.Result result=MediaParser.mergeMotion(base,MediaParser.parsePage(html,base.id));
+                            if(result.images.stream().filter(a->!a.live.isEmpty()).count()>base.images.stream().filter(a->!a.live.isEmpty()).count())runOnUiThread(()->{if(current==generation&&webView==view){show(result);view.destroy();webView=null;}});
+                        }catch(Exception ignored){}});
+                    });
+                },delay);
+            }
+        });
+        handler.postDelayed(finish,15000);
+        view.loadUrl("https://www.douyin.com/note/"+base.id);
     }
     private void parse(){String text=input.getText().toString();final String url;try{url=MediaParser.shareUrl(text);}catch(Exception e){message("请输入正确的抖音作品分享链接");return;}int current=++generation;results.removeAllViews();if(loginView!=null){loginView.destroy();loginView=null;}message("正在解析…");work.execute(()->{Page page=null;String detailError="";try{page=fetchPage(url);String id=MediaParser.shareItemId(page.url);boolean note=page.url.matches(".*?/(?:share/)?(?:note|slides)/.*");
                 // Mobile note pages often omit the MP4 track. Ask for full detail first.
-                if(note&&!id.isEmpty())try{MediaParser.Result full=detailFallback(id);if(full.images.stream().anyMatch(a->!a.live.isEmpty())){runOnUiThread(()->{if(current==generation)show(full);});return;}}catch(Exception e){detailError=e.getMessage();}
-                JSONObject data=MediaParser.extractJson(page.html);MediaParser.Result result=enrich(data,MediaParser.parse(data));runOnUiThread(()->{if(current==generation)show(result);});
-            }catch(Exception error){String id=page==null?"":MediaParser.shareItemId(page.url);if(!id.isEmpty()){boolean note=page.url.matches(".*?/(?:share/)?(?:note|slides)/.*");for(int pass=0;pass<2;pass++){try{MediaParser.Result result=(pass==0)==note?detailFallback(id):feedFallback(id);runOnUiThread(()->{if(current==generation)show(result);});return;}catch(Exception ignored){}}}String reason=error.getMessage()+(detailError.isEmpty()?"":"；详情接口："+detailError);runOnUiThread(()->{if(current==generation)browserFallback(url,current,reason);});}});}
+                if(note&&!id.isEmpty())try{MediaParser.Result full=detailFallback(id);if(full.images.stream().anyMatch(a->!a.live.isEmpty())){runOnUiThread(()->{complete(full,current);});return;}}catch(Exception e){detailError=e.getMessage();}
+                MediaParser.Result result=enrich(null,MediaParser.parsePage(page.html,id));runOnUiThread(()->{complete(result,current);});
+            }catch(Exception error){String id=page==null?"":MediaParser.shareItemId(page.url);if(!id.isEmpty()){boolean note=page.url.matches(".*?/(?:share/)?(?:note|slides)/.*");for(int pass=0;pass<2;pass++){try{MediaParser.Result result=(pass==0)==note?detailFallback(id):feedFallback(id);runOnUiThread(()->{complete(result,current);});return;}catch(Exception ignored){}}}String reason=error.getMessage()+(detailError.isEmpty()?"":"；详情接口："+detailError);runOnUiThread(()->{if(current==generation)browserFallback(url,current,reason);});}});}
     private void browserFallback(String url,int current,String prior){message("网页直读失败，正在尝试浏览器模式…");if(webView!=null)webView.destroy();webView=new WebView(this);webView.getSettings().setJavaScriptEnabled(true);webView.getSettings().setDomStorageEnabled(true);webView.getSettings().setAllowFileAccess(false);webView.getSettings().setAllowContentAccess(false);webView.setWebViewClient(new WebViewClient(){boolean done=false;
-        @Override public void onPageFinished(WebView view,String loaded){if(done||current!=generation)return;view.evaluateJavascript("(function(){try{if(window._ROUTER_DATA)return JSON.stringify(window._ROUTER_DATA);var e=document.getElementById('RENDER_DATA');if(e)return decodeURIComponent(e.textContent);return ''}catch(e){return ''}})()",value->{if(done||current!=generation)return;try{String decoded=new JSONArray("["+value+"]").getString(0);if(decoded.isEmpty())throw new Exception("浏览器页面未包含作品数据");JSONObject data=new JSONObject(decoded);MediaParser.Result result=MediaParser.parse(data);done=true;message("正在查找实况视频…");work.execute(()->{MediaParser.Result complete=enrich(data,result);runOnUiThread(()->{if(current==generation)show(complete);if(webView==view){view.destroy();webView=null;}});});}catch(Exception ex){message("解析失败："+prior+"；浏览器模式："+ex.getMessage());if(results.getChildCount()==0){LinearLayout card=card(results);card.addView(text("作品详情暂不可用。可以登录抖音网页后重试。",14));card.addView(button("打开抖音网页登录",MainActivity.this::showLogin));}}});}
+        @Override public void onPageFinished(WebView view,String loaded){if(done||current!=generation)return;view.evaluateJavascript("(function(){try{if(window._ROUTER_DATA)return JSON.stringify(window._ROUTER_DATA);var e=document.getElementById('RENDER_DATA');if(e)return decodeURIComponent(e.textContent);return ''}catch(e){return ''}})()",value->{if(done||current!=generation)return;try{String decoded=new JSONArray("["+value+"]").getString(0);if(decoded.isEmpty())throw new Exception("浏览器页面未包含作品数据");JSONObject data=new JSONObject(decoded);MediaParser.Result result=MediaParser.parse(data);done=true;message("正在查找实况视频…");work.execute(()->{MediaParser.Result complete=enrich(data,result);runOnUiThread(()->{if(webView==view){view.destroy();webView=null;}if(current==generation)complete(complete,current);});});}catch(Exception ex){message("解析失败："+prior+"；浏览器模式："+ex.getMessage());if(results.getChildCount()==0){LinearLayout card=card(results);card.addView(text("作品详情暂不可用。可以登录抖音网页后重试。",14));card.addView(button("打开抖音网页登录",MainActivity.this::showLogin));}}});}
     });webView.loadUrl(url);}
     private void show(MediaParser.Result r){message("解析成功 · "+r.type);results.removeAllViews();LinearLayout info=card(results);TextView title=text(r.title,20);title.setTypeface(null,Typeface.BOLD);info.addView(title);if(!r.author.isEmpty()){TextView author=text("作者 · "+r.author,13);author.setTextColor(MUTED);info.addView(author);}
         if(!r.video.isEmpty()){LinearLayout videoCard=card(results);videoCard.addView(text("视频",18));if(!r.videoCover.isEmpty())loadPreview(videoCard,r.videoCover);videoCard.addView(button("下载无水印视频",()->save(r.video,"mp4","video/mp4")),new LinearLayout.LayoutParams(-1,dp(48)));Button preview=button("播放视频预览",()->{});preview.setBackground(shape(Color.rgb(228,241,237),13));preview.setTextColor(TEAL);preview.setOnClickListener(v->{preview.setEnabled(false);VideoView player=new VideoView(this);MediaController controls=new MediaController(this);player.setMediaController(controls);videoCard.addView(player,new LinearLayout.LayoutParams(-1,dp(240)));player.setOnPreparedListener(mp->player.start());player.setOnErrorListener((mp,what,extra)->{message("预览加载失败，可直接下载视频");return true;});player.setVideoURI(Uri.parse(r.video));});LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,dp(48));lp.topMargin=dp(9);videoCard.addView(preview,lp);}
@@ -164,6 +197,7 @@ public class MainActivity extends Activity {
     private void showLogin(){if(loginView!=null)return;LinearLayout panel=card(results);panel.addView(text("抖音官网登录",18));TextView tip=text("下方打开 www.douyin.com。登录完成后点“重新解析”；网页会话仅用于请求抖音作品详情。",13);tip.setTextColor(MUTED);panel.addView(tip);panel.addView(button("登录完成 · 重新解析",this::parse),new LinearLayout.LayoutParams(-1,dp(48)));loginView=new WebView(this);loginView.getSettings().setJavaScriptEnabled(true);loginView.getSettings().setDomStorageEnabled(true);CookieManager.getInstance().setAcceptCookie(true);loginView.setWebViewClient(new WebViewClient());panel.addView(loginView,new LinearLayout.LayoutParams(-1,dp(480)));loginView.loadUrl("https://www.douyin.com/");}
     private String extension(String url,String fallback){try{String p=new URL(url).getPath().toLowerCase();for(String x:new String[]{"jpg","jpeg","png","webp","gif"})if(p.endsWith("."+x))return x;}catch(Exception ignored){}return fallback;}
     private void loadPreview(LinearLayout parent,String url){ImageView image=new ImageView(this);image.setScaleType(ImageView.ScaleType.CENTER_CROP);image.setBackground(shape(BG,12));LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,dp(220));lp.topMargin=dp(9);lp.bottomMargin=dp(12);parent.addView(image,lp);work.execute(()->{try{HttpURLConnection c=connection(url);c.setInstanceFollowRedirects(true);c.setReadTimeout(10000);try(java.io.InputStream in=c.getInputStream()){byte[] b=in.readNBytes(2_000_000);android.graphics.Bitmap bitmap=BitmapFactory.decodeByteArray(b,0,b.length);runOnUiThread(()->{if(bitmap!=null)image.setImageBitmap(bitmap);});}finally{c.disconnect();}}catch(Exception ignored){}});}
-    private void save(String url,String extension,String mime){try{Uri uri=Uri.parse(url);if(!"https".equals(uri.getScheme())||uri.getHost()==null)throw new Exception("不支持该媒体地址");DownloadManager.Request request=new DownloadManager.Request(uri);request.setTitle("拾影作品");request.setMimeType(mime);request.addRequestHeader("Referer","https://www.douyin.com/");request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS,"LiveClip/"+System.currentTimeMillis()+"_"+Math.abs(url.hashCode())+"."+extension);((DownloadManager)getSystemService(DOWNLOAD_SERVICE)).enqueue(request);Toast.makeText(this,"已加入下载队列",Toast.LENGTH_SHORT).show();}catch(Exception e){message("保存失败："+e.getMessage());}}
-    @Override protected void onDestroy(){generation++;if(webView!=null)webView.destroy();if(loginView!=null)loginView.destroy();work.shutdownNow();super.onDestroy();}
+    private void save(String url,String extension,String mime){downloads.enqueue(url,extension,mime);}
+    @Override protected void onPause(){if(downloads!=null)downloads.stop();super.onPause();}
+    @Override protected void onDestroy(){generation++;if(downloads!=null)downloads.stop();if(webView!=null)webView.destroy();if(loginView!=null)loginView.destroy();work.shutdownNow();super.onDestroy();}
 }
