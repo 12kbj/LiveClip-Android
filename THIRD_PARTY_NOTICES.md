@@ -23,3 +23,7 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+## 0.4.0 protocol research
+
+The independently written desktop page parser was informed by the data-format approach described in [mubaiqq/dyjx](https://github.com/mubaiqq/dyjx) (`extract_live_photos.py`): desktop note pages may embed per-image motion URLs in `self.__pace_f` records (`video.playAddr[].src`). No source code or assets from that project are included. [Filan616/douyin-livephoto-extractor](https://github.com/Filan616/douyin-livephoto-extractor) also documents that Live Photo motion is a separate video resource.
