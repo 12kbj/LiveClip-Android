@@ -40,4 +40,35 @@ public class MediaParserTest {
         JSONObject webDetail=new JSONObject("{\"aweme_detail\":{\"aweme_id\":\"7688596112890995087\",\"image_post_info\":{\"images\":[{\"url_list\":[\"https://example.org/still.jpg\"],\"video\":{\"play_addr\":{\"url_list\":[\"https://example.org/motion.mp4\"]}}}]}}}");
         assertEquals("https://example.org/motion.mp4",MediaParser.parse(webDetail).images.get(0).live);
     }
+
+    private String push(String text){return "<script>self.__pace_f.push([1,"+JSONObject.quote(text)+"])</script>";}
+    private String image(String still,String motion){
+        return "{\"urlList\":[{\"src\":\"https://example.org/"+still+".jpg\"}],\"video\":{\"playAddr\":[{\"src\":\"https://example.org/"+motion+".mp4\"}]}}";
+    }
+    @Test public void readsDesktopRscSplitAcrossPushes() throws Exception {
+        String record="a:[\"$\",{\"awemeId\":\"7689277421266849637\",\"images\":["+image("still","live")+"]}]\n";
+        int split=record.length()/2;
+        MediaParser.Result result=MediaParser.parsePage(push(record.substring(0,split))+push(record.substring(split)),"7689277421266849637");
+        assertEquals("https://example.org/live.mp4",result.images.get(0).live);
+    }
+    @Test public void upgradesStaticRouterDataFromRsc() throws Exception {
+        String html="<script>window._ROUTER_DATA={\"aweme_id\":\"123456\",\"images\":[{\"url_list\":[\"https://example.org/original.jpg\"]}]};</script>";
+        html+=push("f:{\"awemeId\":\"123456\",\"images\":["+image("thumb","live")+"]}\n");
+        MediaParser.Result r=MediaParser.parsePage(html,"123456");
+        assertEquals("https://example.org/original.jpg",r.images.get(0).image);
+        assertEquals("https://example.org/live.mp4",r.images.get(0).live);
+    }
+    @Test public void rejectsRecommendedWorkMotion() throws Exception {
+        String html=push("1:{\"awemeId\":\"999999\",\"images\":["+image("still","wrong")+"]}\n");
+        try{MediaParser.parsePage(html,"123456");fail("accepted another work");}catch(Exception expected){}
+    }
+    @Test public void mergeKeepsOriginalSlideIndices() throws Exception {
+        MediaParser.Result base=MediaParser.parse(new JSONObject("{\"aweme_id\":\"123456\",\"images\":[{}, {\"url_list\":[\"https://example.org/second.jpg\"]}]}"));
+        MediaParser.Result full=MediaParser.parse(new JSONObject("{\"awemeId\":\"123456\",\"images\":["+image("first","first-motion")+","+image("second","second-motion")+"]}"));
+        MediaParser.Result r=MediaParser.mergeMotion(base,full);
+        assertEquals(2,r.images.size());
+        assertEquals("https://example.org/second-motion.mp4",r.images.get(1).live);
+        full.id="999999";
+        assertSame(base,MediaParser.mergeMotion(base,full));
+    }
 }
