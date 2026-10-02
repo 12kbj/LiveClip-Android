@@ -51,6 +51,14 @@ public class MediaParserTest {
         MediaParser.Result result=MediaParser.parsePage(push(record.substring(0,split))+push(record.substring(split)),"7689277421266849637");
         assertEquals("https://example.org/live.mp4",result.images.get(0).live);
     }
+    @Test public void readsVideoFromHydratedBrowserPage() throws Exception {
+        String id="7689277421266849637";
+        String record="4:{\"awemeId\":\""+id+"\",\"desc\":\"豆包严父 #siri #ai\",\"video\":{\"playAddr\":[{\"src\":\"https://example.org/video.mp4\"}]}}\n";
+        MediaParser.Result result=MediaParser.parsePage("<html><script>self.__next_f.push([1,"+JSONObject.quote(record)+"])</script></html>",id);
+        assertEquals("视频",result.type);
+        assertEquals("豆包严父 #siri #ai",result.title);
+        assertEquals("https://example.org/video.mp4",result.video);
+    }
     @Test public void upgradesStaticRouterDataFromRsc() throws Exception {
         String html="<script>window._ROUTER_DATA={\"aweme_id\":\"123456\",\"images\":[{\"url_list\":[\"https://example.org/original.jpg\"]}]};</script>";
         html+=push("f:{\"awemeId\":\"123456\",\"images\":["+image("thumb","live")+"]}\n");
