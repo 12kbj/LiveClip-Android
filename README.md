@@ -2,11 +2,17 @@
 
 ## 📲 安卓版下载
 
-**[点击下载最新安装包：拾影 v0.5.0 APK](https://github.com/12kbj/LiveClip-Android/releases/download/v0.5.0/LiveClip-v0.5.0-debug.apk)**
+**[点击下载最新安装包：拾影 v0.5.1 APK](https://github.com/12kbj/LiveClip-Android/releases/download/v0.5.1/LiveClip-v0.5.1-debug.apk)**
 
-若点击后没有开始下载，请打开 [v0.5.0 发布页面](https://github.com/12kbj/LiveClip-Android/releases/tag/v0.5.0)，展开 **Assets**，选择 `LiveClip-v0.5.0-debug.apk`。APK 仅适用于安卓手机，iPhone 无法安装。用户已在 vivo X300 Pro 验证 0.4.0 的解析和保存功能；新版下载流程仍需验证。
+若点击后没有开始下载，请打开 [v0.5.1 发布页面](https://github.com/12kbj/LiveClip-Android/releases/tag/v0.5.1)，展开 **Assets**，选择 `LiveClip-v0.5.1-debug.apk`。APK 仅适用于安卓手机，iPhone 无法安装。用户已在 vivo X300 Pro 验证 0.5.0 的大部分功能；个别视频的访问限制仍需用原链接复测。
 
 独立编写的抖音分享链接媒体保存实验项目。支持普通视频、图文原图，以及作品详情提供的实况静态原图与短片。打开 App 时若前台剪贴板有有效抖音分享链接，会自动填入并解析；也可手动粘贴。解析后可分别保存原图与动态 MP4 到 Downloads/LiveClip。
+
+## 0.5.1 更新内容
+
+- 作品结果中增加“复制作品文案”，一键将作者原文复制到剪贴板。
+- 页面或详情接口未返回媒体数据时，浏览器模式继续尝试解析分段加载的作品数据；保留短链接跳转后的地址，以便按作品编号查询备用接口。
+- 加入浏览器分段视频样本的解析回归测试。平台返回 HTTP 403 或作品限制时，仍可能无法取得媒体，不能保证所有链接均可解析。
 
 ## 0.5.0 更新内容
 
